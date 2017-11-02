@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+import sys
+import tempfile
+import os
+import shutil
+import shlex
+import re
+import subprocess as sp
+from collections import namedtuple
+import xmltodict
+import zipfile
+
+repository_root=os.path.join(
+  os.path.dirname(os.path.realpath(__file__)),
+  "..",)
+libroot=os.path.join(repository_root,"src")
+
+sys.path.append(libroot)
+import openscad_utils as openscad
+
+visicut_mapping_file=os.path.join(repository_root,"resources","visicut-mapping.xml")
+visicut_transform_file=os.path.join(repository_root,"resources","visicut-transform.xml")
+
+visicut_scale=1 #3.5409142873233015
+
+fnInputFile=None
+fOpenResult=False
+
+def print_help(f):
+  f.write(
+    "bake-openscad [options] file \n"
+    "  compiles a multi-part color-coded openscad file into a vector graphic\n"
+    "  format ready for use in 3d / 2d fabrication tools."
+    "options:\n"
+    "  -h|--help\n"
+    "    print this help text and exit normally\n"
+    "  --open\n"
+    "    if the compiled part(s) have an attached process, the corresponding \n"
+    "    program is opened after compilation.\n"
+    )
+  f.flush()
+
+class clex(Exception): pass
+try:
+  for arg in sys.argv[1:]:
+    if arg in {"-h","--help"}:
+      print_help(sys.stdout)
+      sys.exit(0)
+    elif arg in {"--open"}:
+      fOpenResult=True
+    elif fnInputFile is None:
+      if not os.path.exists(arg):
+        raise clex("input file '%s' does not exist"%arg)
+      fnInputFile=arg
+    else:
+      raise clex("unknown switch / stray argument: %s"%arg)
+  
+  if fnInputFile is None:
+    raise clex("no input file specified")
+except clex as e:
+  print_help(sys.stderr)
+  sys.stderr.write("\x1b[31;1mError\x1b[30;0m: %s\n"%e)
+  sys.exit(1)
+
+stage=None
+stage_state=None
+fStage=sys.stderr
+INIT="[ \x1b[30;1mINIT\x1b[30;0m ]"
+RUN ="[ \x1b[36;1mRUN\x1b[30;0m  ]"
+WARN="[ \x1b[33;1mWARN\x1b[30;0m ]"
+FAIL="[ \x1b[31;1mFAIL\x1b[30;0m ]"
+DONE="[ \x1b[32;1mDONE\x1b[30;0m ]"
+
+expr_csg_color=re.compile(
+  r"\W*color\(\[([0-9.]+),\W*([0-9.]+),\W*([0-9.]+),\W*([0-9.]+)\]\)\W*\{\W*")
+expr_csg_3delement=re.compile(
+  r"\W*(linear_extrude|cube|cylinder|sphere|polyhedron|import)\W*\(.*"
+)
+expr_csg_2delement=re.compile(
+  r"\W*(square|circle|polygon|text|import_dxf)\W*\(.*"
+)
+expr_echo_part=re.compile("^ECHO: \"bake-part:(.*)\"$")
+expr_echo_engrave=re.compile("^ECHO: \"bake-engrave:(.*)\"$")
+expr_echo_mark=re.compile("^ECHO: \"bake-mark:(.*)\"$")
+expr_echo_cut=re.compile("^ECHO: \"bake-cut\"$")
+
+part_t=namedtuple(
+  "part_t","ident engrave_depths mark_depths cut three_dimensional empty")
+
+svg_component_t=namedtuple(
+  "svg_component_t","fn color use_stroke use_fill group_label")
+
+def setStage(ident=None,state=INIT,brk=False):
+  global stage, stage_state
+  if ident is None: ident=stage
+  if state is None : state=stage_state
+  if stage is not None and ident!=stage: fStage.write("\n")
+  fStage.write("\r%s %s\x1b[0K"%(state,ident))
+  if brk: fStage.write("\n")
+  stage=ident
+  stage_state=state
+
+def try_call(cmdline,critical=True):
+  p=sp.Popen(cmdline,shell=True,stdout=sp.PIPE,stderr=sp.PIPE)
+  (sout,serr)=p.communicate()
+  
+  if p.returncode!=0:
+    setStage(state=FAIL,brk=True)
+    if critical:
+      sys.stderr.write(serr.decode())
+      sys.exit(1)
+  else:
+    setStage(state=DONE)
+  return sout,serr
+
+
+
+fnTempDir=tempfile.mkdtemp()
+fnCSG=os.path.join(fnTempDir,"input.csg")
+fnBase=os.path.splitext(fnInputFile)[0]
+
+def extract_part(ident):
+  engrave_depths=set()
+  mark_depths=set()
+  has_cut_planes=False
+  two_dimensional=False
+  three_dimensional=False
+
+  setStage("extracting part info for '%s'"%ident,RUN)
+  sout,serr=try_call(
+    "openscad %s -D \"\\$laser_part=undef\" -D \"\\$part=\\\"%s\\\"\" -D \"\\$bake_discover=true\" -o %s --render"
+    %(
+      shlex.quote(fnInputFile),
+      ident,
+      shlex.quote(fnCSG)))
+  
+  for ln in serr.decode().split("\n"):
+    ln=ln.strip()
+    m=expr_echo_engrave.match(ln)
+    if m:
+      engrave_depths.add(m.groups()[0])
+    m=expr_echo_mark.match(ln)
+    if m:
+      mark_depths.add(m.groups()[0])
+    m=expr_echo_cut.match(ln)
+    if m:
+      has_cut_planes=True
+
+  setStage(state=DONE,brk=True)
+
+  with open(fnCSG,"r") as f:
+    for ln in f:
+      ln=ln.strip()
+      if expr_csg_3delement.match(ln):
+        three_dimensional=True
+      if expr_csg_2delement.match(ln):
+        two_dimensional=True
+  
+  if len(engrave_depths)>0:
+    sys.stderr.write("engraving:\n")
+    for depth in sorted(engrave_depths):
+      sys.stderr.write("  %s\n"%depth)
+  if len(mark_depths)>0:
+    sys.stderr.write("marking:\n")
+    for depth in sorted(mark_depths):
+      sys.stderr.write("  %s\n"%depth)
+  if has_cut_planes==True:
+    sys.stderr.write("cutting: true\n")
+  
+  if not (three_dimensional or two_dimensional):
+    sys.stderr.write("empty")
+  elif three_dimensional==True:
+    sys.stderr.write("dimensions: 3")
+  else:
+    sys.stderr.write("dimensions: 2")
+  
+  return part_t(
+    ident,engrave_depths,mark_depths,has_cut_planes,three_dimensional,
+    not (three_dimensional or two_dimensional))
+  
+try:
+
+  partnames={"none"}
+  partkv=dict()
+  parts=dict()
+
+
+  setStage("extracting CSG",RUN)
+  sout,serr=try_call(
+    "openscad %s -D \"\\$laser_part=undef\" -D \"\\$part=undef\" -D \"\\$bake_discover=true\" -o %s --render"
+    %(
+      shlex.quote(fnInputFile),
+      shlex.quote(fnCSG)))
+  
+  setStage("extracting composition parameters")
+  for ln in serr.decode().split("\n"):
+    ln=ln.strip()
+    m=expr_echo_part.match(ln)
+    if m:
+      desc=m.groups()[0].split(";")
+      ident=desc[0]
+      partkv[ident]=dict()
+      for item in desc[1:]:
+        k,v=item.split(":",1)
+        partkv[ident][k]=v
+      partnames.add(ident)
+
+  setStage(state=DONE,brk=True)
+  for ident in sorted(partnames):
+    parts[ident]=extract_part(ident)
+
+  for part in parts.values():
+    svg_components=[]
+    svg_paths=[]
+    for depth in part.engrave_depths:
+      fn=os.path.join(fnTempDir,"part-%s-engrave-%s.svg"%(part.ident,depth))
+      setStage("generating %s engrave depth %s"%(part.ident,depth))
+      try_call(
+        "openscad %s "
+        "-D \"\\$laser_part=\\\"engrave\\\"\" "
+        "-D \"\\$part=\\\"%s\\\"\" "
+        "-D \"\\$engrave_depth=%s\" "
+        "-o %s --render"
+        %(
+          shlex.quote(fnInputFile),
+          part.ident,
+          depth,
+          shlex.quote(fn)))
+      svg_components.append(
+        svg_component_t(
+          fn,
+          ("%.2x"%(255-min(255,max(0,int(255*float(depth))))))*3,
+          False,True,"engrave"))
+    for depth in part.mark_depths:
+      fn=os.path.join(fnTempDir,"part-%s-mark-%s.svg"%(part.ident,depth))
+      setStage("generating %s mark depth %s"%(part.ident,depth))
+      try_call(
+        "openscad %s "
+        "-D \"\\$laser_part=\\\"mark\\\"\" "
+        "-D \"\\$part=\\\"%s\\\"\" "
+        "-D \"\\$mark_depth=%s\" "
+        "-o %s --render"
+        %(
+          shlex.quote(fnInputFile),
+          part.ident,
+          depth,
+          shlex.quote(fn)))
+      svg_components.append(
+        svg_component_t(
+          fn,
+          ("%.2x"%(255-min(255,max(0,int(255*float(depth))))))*3,
+          False,True, "mark"))
+    if part.cut:
+      fn=os.path.join(fnTempDir,"part-%s-cut.svg"%(part.ident))
+      setStage("generating %s cut layer"%(part.ident))
+      try_call(
+        "openscad %s "
+        "-D \"\\$laser_part=\\\"cut\\\"\" "
+        "-D \"\\$part=\\\"%s\\\"\" "
+        "-o %s --render"
+        %(
+          shlex.quote(fnInputFile),
+          part.ident,
+          shlex.quote(fn)))
+      svg_components.append(svg_component_t(fn,"ff0000",False,True,"cut"))
+
+    if (
+      not part.empty and
+      len(part.engrave_depths)<1 and len(part.mark_depths)<1 and not part.cut):
+      if part.three_dimensional:
+        fn="%s-part-%s.stl"%(fnBase,part.ident)
+        setStage("generating %s 3d mesh"%part.ident)
+      else:
+        fn="%s-part-%s.svg"%(fnBase,part.ident)
+        setStage("generating %s 2d figure"%(part.ident))
+
+      try_call(
+        "openscad %s "
+        "-D \"\\$part=\\\"%s\\\"\" "
+        "-o %s --render"
+        %(
+          shlex.quote(fnInputFile),
+          part.ident,
+          shlex.quote(fn)))
+
+    if len(svg_components)>0:
+      setStage("uniting %s layers"%(part.ident))
+      path_groups=[]
+      svg_width=0
+      svg_height=0
+      for comp in svg_components:
+        with open(comp.fn,"r") as f:
+          xml=xmltodict.parse(f.read())
+          svg=xml["svg"]
+        
+        if not "path" in svg: continue
+        svg_width=max(svg_width,float(svg["@width"]))
+        svg_height=max(svg_height,float(svg["@height"]))
+
+        if type(svg["path"])==list: mypaths=paths
+        else: mypaths=[svg["path"]]
+        for path in mypaths:
+          del path["@stroke"]
+          del path["@fill"]
+          del path["@stroke-width"]
+          if comp.use_fill: 
+            path["@fill"]="#%s"%comp.color
+          if comp.use_stroke:
+            path["@stroke-width"]="0.1mm"
+            path["@stroke"]="#%s"%comp.color
+        mygroup={ "@inkscape:label":comp.group_label, "path":mypaths}
+        path_groups.append(mygroup)
+      
+      svg_width*=visicut_scale
+      svg_height*=visicut_scale
+      del svg["path"];
+      svg["g"]={ "@transform": "scale(%s)"%visicut_scale, "g": path_groups}
+      svg["@width"]=str(svg_width)
+      svg["@height"]=str(svg_height)
+      svg["@xmlns:inkscape"]="http://www.inkscape.org/namespaces/inkscape"
+      fn_svg="%s-part-%s.svg"%(fnBase,part.ident)
+      with open(fn_svg,"w") as f:
+        f.write(xmltodict.unparse(xml))
+      setStage(state=DONE)
+    
+      if "process" in partkv[part.ident]:
+        setStage("processing visicut for %s"%part.ident,RUN)
+        process=partkv[part.ident]["process"]
+        if process=="visicut":
+          fn_mapping=os.path.join(fnTempDir,"mappings.xml")
+          fn_transform=os.path.join(fnTempDir,"transform.xml")
+          fn_plf="%s-part-%s.plf"%(fnBase,part.ident)
+          shutil.copy(visicut_mapping_file,fn_mapping)
+
+          with open(visicut_transform_file,"r") as f:
+            transform_template=f.read()
+          
+          with open(fn_transform,"w") as f:
+            f.write(transform_template.format(
+              offsetY=svg_height
+            ))
+          
+          zip=zipfile.ZipFile(fn_plf,"w")
+          zip.write(fn_mapping,"mappings.xml")
+          zip.write(fn_transform,"transform.xml")
+          zip.write(fn_svg,os.path.basename(fn_svg))
+          zip.close()
+          if fOpenResult:
+            os.system("visicut %s &"%shlex.quote(fn_plf))
+        setStage(state=DONE)
+          
+
+          
+
+  
+
+
+
+finally:
+  shutil.rmtree(fnTempDir)
+  setStage(ident="done",state=DONE,brk=True)

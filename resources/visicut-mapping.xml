@@ -1,0 +1,69 @@
+<com.t__oster.visicut.model.mapping.MappingSet serialization="custom">
+  <unserializable-parents/>
+  <linked-list>
+    <default/>
+    <int>2</int>
+    <mapping>
+      <a class="filters" serialization="custom">
+        <unserializable-parents/>
+        <linked-list>
+          <default/>
+          <int>1</int>
+          <filter>
+            <compare>true</compare>
+            <inverted>false</inverted>
+            <attribute>Group</attribute>
+            <value class="string">engrave</value>
+          </filter>
+        </linked-list>
+        <filters>
+          <default>
+            <multiselectEnabled>false</multiselectEnabled>
+          </default>
+        </filters>
+      </a>
+      <b class="raster3dProfile">
+        <DPI>500.0</DPI>
+        <description>Engrave while modulating laserpower according to image darkness</description>
+        <name>engrave 3d</name>
+        <invertColors>false</invertColors>
+        <colorShift>0</colorShift>
+      </b>
+    </mapping>
+    <mapping>
+      <a class="filters" serialization="custom">
+        <unserializable-parents/>
+        <linked-list>
+          <default/>
+          <int>1</int>
+          <filter>
+            <compare>false</compare>
+            <inverted>false</inverted>
+            <attribute>Group</attribute>
+            <value class="string">cut</value>
+          </filter>
+        </linked-list>
+        <filters>
+          <default>
+            <multiselectEnabled>false</multiselectEnabled>
+          </default>
+        </filters>
+      </a>
+      <b class="vectorProfile">
+        <DPI>500.0</DPI>
+        <description>Cut through the material</description>
+        <name>cut</name>
+        <orderStrategy>INNER_FIRST</orderStrategy>
+        <useOutline>false</useOutline>
+        <isCut>true</isCut>
+        <width>0.7</width>
+      </b>
+    </mapping>
+  </linked-list>
+  <com.t__oster.visicut.model.mapping.MappingSet>
+    <default>
+      <description>A new created mapping</description>
+      <name>bake-mapping</name>
+    </default>
+  </com.t__oster.visicut.model.mapping.MappingSet>
+</com.t__oster.visicut.model.mapping.MappingSet>
