@@ -13,10 +13,6 @@ import zipfile
 repository_root=os.path.join(
   os.path.dirname(os.path.realpath(__file__)),
   "..",)
-libroot=os.path.join(repository_root,"src")
-
-sys.path.append(libroot)
-import openscad_utils as openscad
 
 visicut_mapping_file=os.path.join(repository_root,"resources","visicut-mapping.xml")
 visicut_transform_file=os.path.join(repository_root,"resources","visicut-transform.xml")
@@ -203,7 +199,8 @@ try:
       for item in desc[1:]:
         k,v=item.split(":",1)
         partkv[ident][k]=v
-      partnames.add(ident)
+      if not "ignore" in partkv[ident]:
+        partnames.add(ident)
 
   setStage(state=DONE,brk=True)
   for ident in sorted(partnames):
