@@ -167,3 +167,11 @@ yacc.yacc()
 
 
 parse=yacc.parse
+
+def traverse(statements,visitor):
+  for modinst in statements:
+    if hasattr(visitor,"%s_pre"%modinst.ident):
+      getattr(visitor,"%s_pre"%modinst.ident)(*modinst.args,**modinst.kwargs)
+    traverse(modinst.children,visitor)
+    if hasattr(visitor,"%s_post"%modinst.ident):
+      getattr(visitor,"%s_post"%modinst.ident)(*modinst.args,**modinst.kwargs)
