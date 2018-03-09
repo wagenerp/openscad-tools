@@ -2,11 +2,11 @@ from collections import namedtuple
 import numpy
 
 class MarkerVisitor:
-  marker_t=namedtuple("marker_t","ident transform absTransform parent")
+  marker_t=namedtuple("marker_t","args kwargs transform absTransform parent")
 
   def __init__(s):
 
-    s.markers=dict()
+    s.markers=list()
 
     s._curTransform=[
       [1,0,0,0],
@@ -24,7 +24,7 @@ class MarkerVisitor:
   def multmatrix_post(s,m):
     s._curTransform=s._transform_stack.pop()
     
-  def marker_pre(s,ident):
+  def marker_pre(s,*args,**kwargs):
     transform=s._curTransform
     parent=None
 
@@ -33,10 +33,10 @@ class MarkerVisitor:
       transform=numpy.dot(numpy.linalg.inv(s.markers[parent].absTransform),transform)
 
 
-    s._marker_stack.append(ident)
-    s.markers[ident]=MarkerVisitor.marker_t(
-      ident,transform,s._curTransform,parent)
+    s._marker_stack.append(len(s.markers))
+    s.markers.append(MarkerVisitor.marker_t(
+      args,kwargs,transform,s._curTransform,parent))
 
-  def marker_post(s,ident):
+  def marker_post(s,*args,**kwargs):
     s._marker_stack.pop()
 
