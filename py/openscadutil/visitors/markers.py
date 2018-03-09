@@ -1,8 +1,8 @@
 from collections import namedtuple
+from ..types import marker_t
 import numpy
 
 class MarkerVisitor:
-  marker_t=namedtuple("marker_t","args kwargs transform absTransform parent")
 
   def __init__(s):
 
@@ -34,7 +34,7 @@ class MarkerVisitor:
 
 
     s._marker_stack.append(len(s.markers))
-    s.markers.append(MarkerVisitor.marker_t(
+    s.markers.append(marker_t(
       args,kwargs,transform,s._curTransform,parent))
 
   def marker_post(s,*args,**kwargs):
