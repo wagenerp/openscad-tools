@@ -20,7 +20,8 @@ tokens = (
   "NUMBER",
   "STRING",
   "TRUE",
-  "FALSE"
+  "FALSE",
+  "UNDEF"
 )
 # Tokens
 
@@ -39,6 +40,7 @@ t_FALSE = "false"
 RESERVED = {
   "true": "TRUE",
   "false": "FALSE",
+  "undef": "UNDEF"
 }
 
 def t_IDENT(t):
@@ -146,6 +148,9 @@ def p_true(p):
 def p_false(p):
   '''literal : FALSE'''
   p[0]=False
+def p_undef(p):
+  '''literal : UNDEF'''
+  p[0]=None
 
 def p_list(p):
   '''list : LSQUARE literallist RSQUARE
