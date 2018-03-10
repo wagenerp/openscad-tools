@@ -44,12 +44,12 @@ RESERVED = {
 }
 
 def t_IDENT(t):
-  r"[a-zA-Z_][a-zA-Z0-9_]*"
+  r"\$?[a-zA-Z_][a-zA-Z0-9_]*"
   t.type=RESERVED.get(t.value,"IDENT")
   return t
 
 def t_NUMBER(t):
-  r"[0-9]+(\.[0-9]+)?"
+  r"[+-]?[0-9]+(\.[0-9]+)?([eE][+-][0-9]+)?"
   try:
     t.value = int(t.value)
   except ValueError:
@@ -58,7 +58,7 @@ def t_NUMBER(t):
 
 def t_STRING(t):
   r"\"([^\"]*(\\\")?)*\""
-  t.value=t.value.encode().decode("unicode_escape")
+  t.value=t.value[1:-1].encode().decode("unicode_escape")
   return t
 
 t_ignore = ' \t'
@@ -157,15 +157,15 @@ def p_list(p):
           | LSQUARE RSQUARE'''
   if len(p)==4:
     p[0]=p[2]
-  elif len(p)==3: 
+  elif len(p)==3:
     p[0]=list()
 
 
 def p_error(p):
-    if p:
-        print("Syntax error in line %s at '%s'" % (p.lexer.lineno,p.value))
-    else:
-        print("Syntax error at EOF")
+  if p:
+    print("Syntax error in line %s at '%s'" % (p.lexer.lineno,p.value))
+  else:
+    print("Syntax error at EOF")
 
 import ply.yacc as yacc
 yacc.yacc()
@@ -175,8 +175,16 @@ parse=yacc.parse
 
 def traverse(statements,visitor):
   for modinst in statements:
+    markertype=None
+
     if hasattr(visitor,"%s_pre"%modinst.ident):
       getattr(visitor,"%s_pre"%modinst.ident)(*modinst.args,**modinst.kwargs)
+    if modinst.ident=="marker" and len(modinst.args)>0:
+      markertype="marker_%s"%modinst.args[0]
+    if markertype is not None and hasattr(visitor,"%s_pre"%markertype):
+      getattr(visitor,"%s_pre"%markertype)(*modinst.args[1:],**modinst.kwargs)
     traverse(modinst.children,visitor)
+    if markertype is not None and hasattr(visitor,"%s_post"%markertype):
+      getattr(visitor,"%s_post"%markertype)(*modinst.args[1:],**modinst.kwargs)
     if hasattr(visitor,"%s_post"%modinst.ident):
       getattr(visitor,"%s_post"%modinst.ident)(*modinst.args,**modinst.kwargs)
