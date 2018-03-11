@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+import sys
+import os
+import subprocess as sp
+sys.path.append(
+  os.path.join(
+    os.path.dirname(os.path.realpath(__file__)),
+    "..",
+    "py"
+  )
+)
+from openscadutil import csg
+from openscadutil.constraints import ConstraintProcessor
+from openscadutil.guides import GuidesProcessor
+
+all_processors=[
+  ConstraintProcessor,
+  GuidesProcessor
+]
+
+processor_dict={
+  cls.ident : cls 
+  for cls in all_processors
+}
+
+def print_help(f):
+  f.write(
+    "openscad-pp [options] [processors] [--] input_file+\n"
+    "options:\n"
+    "  -h|--help\n"
+    "    print this help text and exit normally\n"
+    "processors: (specify none to use all)\n"
+    "  {processors}\n"
+    "".format(
+      processors='\n  '.join(cls.ident for cls in all_processors))
+
+    )
+  f.flush()
+
+fnInput=[]
+processors=[]
+
+class clex(Exception): pass
+try:
+  file_only=False
+  for arg in sys.argv[1:]:
+    if not file_only:
+      if arg in {"-h","--help"}:
+        print_help(sys.stdout)
+        sys.exit(0)
+      elif arg == "--":
+        file_only=True
+        continue
+      elif arg in processor_dict:
+        processors.append(processor_dict[arg])
+        continue
+
+    if os.path.exists(arg):
+      fnInput.append(arg)
+    else:
+      raise clex("unknown switch / stray argument: %s"%arg)
+
+  if len(fnInput)<1:
+    raise clex("no input specified")
+except clex as e:
+  print_help(sys.stderr)
+  sys.stderr.write("\x1b[31;1mError\x1b[30;0m: %s\n"%e)
+  sys.exit(1)
+
+
+if len(processors)<1:
+  processors=all_processors
+
+
+class rtex(Exception): pass
+try:
+  for fn in fnInput:
+    fn_csg="%s.csg"%fn
+    fn_pp="%s.pp"%fn
+    for proc in processors:
+
+      p=sp.Popen(["openscad",fn,"-o",fn_csg,"--enable=assert","--enable=marker"],stdout=sp.PIPE,stderr=sp.PIPE,stdin=sp.PIPE)
+      (sout,serr)=p.communicate()
+      if p.returncode!=0:
+        raise rtex("error processing %s: %s"%(fn,serr.decode()))
+      
+      with open(fn_csg,"r") as f:
+        ast=csg.parse(f.read())
+      
+      csg.traverse(ast,proc)
+      proc.compute()
+
+      with open(fn_pp,"w") as f:
+        for proc1 in processors:
+          proc1.output(f)
+      
+
+except rtex as e:
+  sys.stderr.write("\x1b[31;1mError\x1b[30;0m: %s\n"%e)
+  sys.exit(1)
