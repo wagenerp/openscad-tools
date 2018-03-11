@@ -291,8 +291,14 @@ try:
           svg=xml["svg"]
         
         if not "path" in svg: continue
-        svg_width=max(svg_width,float(svg["@width"]))
-        svg_height=max(svg_height,float(svg["@height"]))
+
+        def conv_dimension(dim):
+          if dim.endswith("mm"):
+            return float(dim[:-2])
+          return float(dim)
+
+        svg_width=max(svg_width,conv_dimension(svg["@width"]))
+        svg_height=max(svg_height,conv_dimension(svg["@height"]))
 
         if type(svg["path"])==list: mypaths=paths
         else: mypaths=[svg["path"]]
