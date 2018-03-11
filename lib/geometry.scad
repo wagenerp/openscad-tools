@@ -13,6 +13,15 @@ module rcccube(v,r) {
     
 }
 
+module rcube(v,r) {
+  translate([r,r,0]) 
+    minkowski() {
+      cylinder(r=r,h=v[2]/2);
+      cube([v[0]-r*2,v[1]-r*2,v[2]/2]);
+    }
+    
+}
+
 module ccsquare(v) {
   translate(-0.5*[v[0],v[1],0])
     square(v);
@@ -51,4 +60,18 @@ module spool_extrude(twist,height,steps=500) {
     translate([0,0,dz*i]) rotate([0,0,da*i])
       spool_extrude_part(da,dz) children();
   }
+}
+
+module rngon(n,d=undef,r=undef,rc=2) {
+  r_outer=(d==undef) ? r : d/2;
+  r_ring=r_outer-rc/cos(180/n);
+
+  hull() {
+    for(i=[0:1:n-1]) rotate([0,0,360/n*i]) translate([r_ring,0,0])
+      circle(r=rc);
+  }
+}
+
+module rncylinder(n,d=undef,r=undef,rc=2,h=1) {
+  linear_extrude(height=h) rngon(n,d,r,rc);
 }
