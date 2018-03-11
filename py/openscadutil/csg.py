@@ -19,6 +19,8 @@ tokens = (
   "IDENT",
   "NUMBER",
   "STRING",
+  "PERCENT",
+  "FENCE",
   "TRUE",
   "FALSE",
   "UNDEF"
@@ -34,8 +36,8 @@ t_RCURLY = r"\}"
 t_SEMICOLON = ";"
 t_COMMA = ","
 t_EQUALS = "="
-t_TRUE = "true"
-t_FALSE = "false"
+t_PERCENT = r"\%"
+t_FENCE = r"\#"
 
 RESERVED = {
   "true": "TRUE",
@@ -98,12 +100,17 @@ def p_instantiation(p):
   p[0]=modinst_t(p[1].ident,p[1].args,p[1].kwargs,children)
 
 def p_module_header(p):
-  '''module_head : IDENT LPAREN arglist RPAREN
-                | IDENT LPAREN RPAREN'''
-  if len(p)==5:
-    p[0]=modhead_t(p[1],p[3][0],p[3][1])
+  '''module_head : module_modifier IDENT LPAREN arglist RPAREN
+                | module_modifier IDENT LPAREN RPAREN'''
+  if len(p)==6:
+    p[0]=modhead_t(p[2],p[4][0],p[4][1])
   else:
-    p[0]=modhead_t(p[1],list(),dict())
+    p[0]=modhead_t(p[2],list(),dict())
+
+def p_module_modifier(p):
+  '''module_modifier : PERCENT
+                     | FENCE
+                     | '''
 
 def p_arglist(p):
   '''arglist : arg
