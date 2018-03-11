@@ -2,7 +2,7 @@
   <unserializable-parents/>
   <linked-list>
     <default/>
-    <int>2</int>
+    <int>3</int>
     <mapping>
       <a class="filters" serialization="custom">
         <unserializable-parents/>
@@ -57,6 +57,35 @@
         <useOutline>false</useOutline>
         <isCut>true</isCut>
         <width>0.7</width>
+      </b>
+    </mapping>
+    <mapping>
+      <a class="filters" serialization="custom">
+        <unserializable-parents/>
+        <linked-list>
+          <default/>
+          <int>1</int>
+          <filter>
+            <compare>false</compare>
+            <inverted>false</inverted>
+            <attribute>Group</attribute>
+            <value class="string">mark</value>
+          </filter>
+        </linked-list>
+        <filters>
+          <default>
+            <multiselectEnabled>false</multiselectEnabled>
+          </default>
+        </filters>
+      </a>
+      <b class="vectorProfile">
+        <DPI>500.0</DPI>
+        <description>Engrave along lines</description>
+        <name>mark</name>
+        <orderStrategy>NEAREST</orderStrategy>
+        <useOutline>false</useOutline>
+        <isCut>true</isCut>
+        <width>1.0</width>
       </b>
     </mapping>
   </linked-list>
