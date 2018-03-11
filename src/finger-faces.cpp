@@ -193,7 +193,7 @@ int main(int argn, char **argv) {
         "part(\"face-%li\",process=\"visicut\","
           "matrix=[[%f,%f,%f,%f], [%f,%f,%f,%f], [%f,%f,%f,%f], [0,0,0,1] ],"
           "extrude=%f) {\n"
-        "  difference() {\n"
+        "  cut() {\n"
         "    union() {\n",
           face-faces->begin(),
           ex.x,ey.x,ez.x,o.x,
