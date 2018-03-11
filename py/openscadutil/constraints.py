@@ -204,6 +204,8 @@ class ConstraintSystem:
 
 class ConstraintProcessor(MarkerVisitor):
 
+  ident="constraints"
+
   def __init__(s):
     MarkerVisitor.__init__(s)
     s._systems=dict()
@@ -235,7 +237,7 @@ class ConstraintProcessor(MarkerVisitor):
   def marker_line_pre(s,system,*args,**kwargs):
     if not system in s._systems:
       raise SyntaxError("non-existing marker system '%s'"%system)
-    s._systems[system].addNormal(*args,**kwargs)
+    s._systems[system].addLine(*args,**kwargs)
   
   def marker_constrain_pre(s,system,*args,**kwargs):
     if not system in s._systems:
