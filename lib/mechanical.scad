@@ -12,10 +12,10 @@ module m4_shaft(
     cylinder(d=4.4,h=height,$fs=0.1,$fa=1);
     if (nutcase!=false)
       translate([0,0,nutcase]) hull() {
-        cylinder(d=8.2,h=nutcase_height,$fa=60);
+        cylinder(d=8.2,h=nutcase_height,$fa=60,$fn=6);
         if (nutchute!=false) {
           translate([nutchute,0,0]) 
-            cylinder(d=8.2,h=nutcase_height,$fa=60);
+            cylinder(d=8.2,h=nutcase_height,$fa=60,$fn=6);
         }
       }
     if (top) {
@@ -39,10 +39,10 @@ module m3_shaft(
     cylinder(d=3.8,h=height,$fs=0.1,$fa=1);
     if (nutcase!=false)
       translate([0,0,nutcase]) hull() {
-        cylinder(d=6.6,h=nutcase_height,$fa=60);
+        cylinder(d=6.6,h=nutcase_height,$fa=60,$fn=6);
         if (nutchute!=false) {
           translate([nutchute,0,0]) 
-            cylinder(d=6.6,h=nutcase_height,$fa=60);
+            cylinder(d=6.6,h=nutcase_height,$fa=60,$fn=6);
         }
       }
     if (top) {
@@ -67,10 +67,10 @@ module m25_shaft(
     cylinder(d=3.8,h=height,$fs=0.1,$fa=1);
     if (nutcase!=false)
       translate([0,0,nutcase]) hull() {
-        cylinder(d=5.9,h=nutcase_height,$fa=60);
+        cylinder(d=5.9,h=nutcase_height,$fa=60,$fn=6);
         if (nutchute!=false) {
           translate([nutchute,0,0]) 
-            cylinder(d=5.9,h=nutcase_height,$fa=60);
+            cylinder(d=5.9,h=nutcase_height,$fa=60,$fn=6);
         }
       }
     if (top) {
