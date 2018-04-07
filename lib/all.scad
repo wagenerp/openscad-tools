@@ -5,3 +5,5 @@ include <multipart.scad>;
 include <mechanical.scad>;
 include <transform.scad>;
 include <threads.scad>;
+include <constraints.scad>;
+include <guides.scad>;
