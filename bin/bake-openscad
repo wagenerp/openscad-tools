@@ -9,6 +9,7 @@ import subprocess as sp
 from collections import namedtuple
 import xmltodict
 import zipfile
+import hashlib
 
 repository_root=os.path.join(
   os.path.dirname(os.path.realpath(__file__)),
@@ -81,7 +82,8 @@ expr_echo_mark=re.compile("^ECHO: \"bake-mark:(.*)\"$")
 expr_echo_cut=re.compile("^ECHO: \"bake-cut\"$")
 
 part_t=namedtuple(
-  "part_t","ident engrave_depths mark_depths cut three_dimensional empty")
+  "part_t",
+  "ident engrave_depths mark_depths cut three_dimensional empty checksum")
 
 svg_component_t=namedtuple(
   "svg_component_t","fn color use_stroke use_fill group_label")
@@ -109,11 +111,17 @@ def try_call(cmdline,critical=True):
     setStage(state=DONE)
   return sout,serr
 
+def file_checksum(fn):
+  sha=hashlib.sha1()
+  with open(fn,"rb") as f:
+    sha.update(f.read())
+  return sha.hexdigest()
 
 
 fnTempDir=tempfile.mkdtemp()
 fnCSG=os.path.join(fnTempDir,"input.csg")
 fnBase=os.path.splitext(fnInputFile)[0]
+fnLog="%s.bakelog"%fnInputFile
 
 def extract_part(ident):
   engrave_depths=set()
@@ -143,10 +151,11 @@ def extract_part(ident):
       has_cut_planes=True
 
   setStage(state=DONE,brk=True)
-
+  sha=hashlib.sha1()
   with open(fnCSG,"r") as f:
     for ln in f:
       ln=ln.strip()
+      sha.update(ln.encode())
       if expr_csg_3delement.match(ln):
         three_dimensional=True
       if expr_csg_2delement.match(ln):
@@ -172,13 +181,30 @@ def extract_part(ident):
   
   return part_t(
     ident,engrave_depths,mark_depths,has_cut_planes,three_dimensional,
-    not (three_dimensional or two_dimensional))
+    not (three_dimensional or two_dimensional),
+    sha.hexdigest())
   
 try:
 
   partnames={"none"}
   partkv=dict()
   parts=dict()
+  completed_part_t=namedtuple(
+    "completed_part_t","filename file_checksum csg_checksum")
+  completed_parts=dict()
+
+  setStage("loading metadata",RUN)
+  if os.path.exists(fnLog):
+    with open(fnLog,"r") as f:
+      for ln in f:
+        cmdline=shlex.split(ln,comments=True)
+        if len(cmdline)<1: continue
+        if cmdline[0]=="part":
+          if len(cmdline)<5: continue
+          part=completed_part_t(*cmdline[2:5])
+          if not os.path.exists(part.filename): continue
+          if file_checksum(part.filename)!=part.file_checksum: continue
+          completed_parts[cmdline[1]]=part
 
 
   setStage("extracting CSG",RUN)
@@ -209,6 +235,10 @@ try:
   for part in parts.values():
     svg_components=[]
     svg_paths=[]
+    if part.ident in completed_parts:
+      if part.checksum==completed_parts[part.ident].csg_checksum:
+        continue
+    fn_part=None
     for depth in part.engrave_depths:
       fn=os.path.join(fnTempDir,"part-%s-engrave-%s.svg"%(part.ident,depth))
       setStage("generating %s engrave depth %s"%(part.ident,depth))
@@ -265,10 +295,10 @@ try:
       not part.empty and
       len(part.engrave_depths)<1 and len(part.mark_depths)<1 and not part.cut):
       if part.three_dimensional:
-        fn="%s-part-%s.stl"%(fnBase,part.ident)
+        fn_part="%s-part-%s.stl"%(fnBase,part.ident)
         setStage("generating %s 3d mesh"%part.ident)
       else:
-        fn="%s-part-%s.svg"%(fnBase,part.ident)
+        fn_part="%s-part-%s.svg"%(fnBase,part.ident)
         setStage("generating %s 2d figure"%(part.ident))
 
       try_call(
@@ -278,7 +308,7 @@ try:
         %(
           shlex.quote(fnInputFile),
           part.ident,
-          shlex.quote(fn)))
+          shlex.quote(fn_part)))
 
     if len(svg_components)>0:
       setStage("uniting %s layers"%(part.ident))
@@ -325,6 +355,7 @@ try:
       with open(fn_svg,"w") as f:
         f.write(xmltodict.unparse(xml))
       setStage(state=DONE)
+      fn_part=fn_svg
     
       if "process" in partkv[part.ident]:
         setStage("processing visicut for %s"%part.ident,RUN)
@@ -333,6 +364,7 @@ try:
           fn_mapping=os.path.join(fnTempDir,"mappings.xml")
           fn_transform=os.path.join(fnTempDir,"transform.xml")
           fn_plf="%s-part-%s.plf"%(fnBase,part.ident)
+          fn_part=fn_plf
           shutil.copy(visicut_mapping_file,fn_mapping)
 
           with open(visicut_transform_file,"r") as f:
@@ -351,9 +383,22 @@ try:
           if fOpenResult:
             os.system("visicut %s &"%shlex.quote(fn_plf))
         setStage(state=DONE)
+      
+      if fn_part is not None:
+        completed_parts[part.ident]=completed_part_t(fn_part,file_checksum(fn_part),part.checksum)
+    
           
 
           
+  with open(fnLog,"w") as f:
+    for k,v in sorted(completed_parts.items()):
+      f.write("part %s %s %s %s\n"
+        %(
+          shlex.quote(k),
+          shlex.quote(v.filename),
+          shlex.quote(v.file_checksum),
+          shlex.quote(v.csg_checksum)
+        ))
 
   
 
