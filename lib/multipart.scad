@@ -6,7 +6,7 @@ module part(name,process="",offset=[0,0,0],matrix=[[1,0,0,0], [0,1,0,0], [0,0,1,
   offset_actual=($part==undef || $part==$partname) ? offset : [0,0,0];
   matrix_actual=($part==undef || $part==$partname) ? matrix : [[1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1]];
   explode_actual=($part==undef || $part==$partname) ? $part_explode : 0;
-  if ($part==undef || $part==name || $part==$partname) {
+  if ($part==undef || (!ignore && ($part==name || $part==$partname))) {
     if ($bake_discover && $partname==undef) echo(str("bake-part:",name,";process:",process,ignore ? ";ignore:true":""));
     multmatrix(matrix_actual)
     translate([0,0,explode_actual])
