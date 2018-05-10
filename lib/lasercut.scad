@@ -23,6 +23,7 @@ module cut() {
       children(0);
       children([1:$children-1]);
     }
+    if (!$lasercut_hide_difference)
     color([1,0,0,0.5]) children([1:$children-1]);
   } else if ($laser_part=="cut") {
     difference() {
