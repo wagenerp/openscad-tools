@@ -42,3 +42,13 @@ module transform_ezex(ex,ez) {
     [u0[3],v0[3],w0[3],1]
   ]) children();
 }
+
+module chain_translate(offsets,index,f=1) {
+  if (index==0) 
+    translate(offsets[0]*f) 
+      children();
+  else 
+    chain_translate(offsets,index-1,f) 
+      translate(offsets[index]*f) 
+        children();
+}
