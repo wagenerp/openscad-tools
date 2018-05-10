@@ -22,6 +22,10 @@ visicut_scale=1 #3.5409142873233015
 
 fnInputFile=None
 fOpenResult=False
+options={
+  "output_dir": ".",
+  "short_filenames": "0"
+}
 
 def print_help(f):
   f.write(
@@ -34,24 +38,34 @@ def print_help(f):
     "  --open\n"
     "    if the compiled part(s) have an attached process, the corresponding \n"
     "    program is opened after compilation.\n"
+    "  --output-dir <path>\n"
+    "    specify a default output directory. this can still be overridden by \n"
+    "    scad files.\n"
     )
   f.flush()
 
 class clex(Exception): pass
 try:
+  s=None
   for arg in sys.argv[1:]:
-    if arg in {"-h","--help"}:
-      print_help(sys.stdout)
-      sys.exit(0)
-    elif arg in {"--open"}:
-      fOpenResult=True
-    elif fnInputFile is None:
-      if not os.path.exists(arg):
-        raise clex("input file '%s' does not exist"%arg)
-      fnInputFile=arg
-    else:
-      raise clex("unknown switch / stray argument: %s"%arg)
-  
+    if s is None:
+      if arg in {"-h","--help"}:
+        print_help(sys.stdout)
+        sys.exit(0)
+      elif arg in {"--open"}:
+        fOpenResult=True
+      elif arg in {"--output-dir"}: 
+        s=arg
+
+      elif fnInputFile is None:
+        if not os.path.exists(arg):
+          raise clex("input file '%s' does not exist"%arg)
+        fnInputFile=arg
+      else:
+        raise clex("unknown switch / stray argument: %s"%arg)
+    elif s=="--output-dir":
+      options["output_dir"]=arg
+      s=None
   if fnInputFile is None:
     raise clex("no input file specified")
 except clex as e:
@@ -80,7 +94,7 @@ expr_echo_part=re.compile("^ECHO: \"bake-part:(.*)\"$")
 expr_echo_engrave=re.compile("^ECHO: \"bake-engrave:(.*)\"$")
 expr_echo_mark=re.compile("^ECHO: \"bake-mark:(.*)\"$")
 expr_echo_cut=re.compile("^ECHO: \"bake-cut\"$")
-
+expr_echo_option=re.compile("^ECHO: \"bake-option ([a-zA-Z_][a-zA-Z_0-9]*):(.*)\"$")
 part_t=namedtuple(
   "part_t",
   "ident engrave_depths mark_depths cut three_dimensional empty checksum")
@@ -109,7 +123,7 @@ def try_call(cmdline,critical=True):
       sys.exit(1)
   else:
     setStage(state=DONE)
-  return sout,serr
+  return sout,serr,p.returncode
 
 def file_checksum(fn):
   sha=hashlib.sha1()
@@ -131,7 +145,7 @@ def extract_part(ident):
   three_dimensional=False
 
   setStage("extracting part info for '%s'"%ident,RUN)
-  sout,serr=try_call(
+  sout,serr,retcode=try_call(
     "openscad %s -D \"\\$laser_part=undef\" -D \"\\$part=\\\"%s\\\"\" -D \"\\$bake_discover=true\" -o %s --render"
     %(
       shlex.quote(fnInputFile),
@@ -204,11 +218,17 @@ try:
           part=completed_part_t(*cmdline[2:5])
           if not os.path.exists(part.filename): continue
           if file_checksum(part.filename)!=part.file_checksum: continue
-          completed_parts[cmdline[1]]=part
+          completed_parts[(cmdline[1],".")]=part
+        elif cmdline[0]=="part-in-dir":
+          if len(cmdline)<6: continue
+          part=completed_part_t(*cmdline[3:6])
+          if not os.path.exists(part.filename): continue
+          if file_checksum(part.filename)!=part.file_checksum: continue
+          completed_parts[(cmdline[1],cmdline[2])]=part
 
 
   setStage("extracting CSG",RUN)
-  sout,serr=try_call(
+  sout,serr,retcode=try_call(
     "openscad %s -D \"\\$laser_part=undef\" -D \"\\$part=undef\" -D \"\\$bake_discover=true\" -o %s --render"
     %(
       shlex.quote(fnInputFile),
@@ -227,18 +247,31 @@ try:
         partkv[ident][k]=v
       if not "ignore" in partkv[ident]:
         partnames.add(ident)
+      continue
+    m=expr_echo_option.match(ln)
+    if m:
+      k,v=m.groups()[0:2]
+      options[k]=v
 
   setStage(state=DONE,brk=True)
   for ident in sorted(partnames):
     parts[ident]=extract_part(ident)
 
+  if not os.path.exists(options["output_dir"]):
+    os.makedirs(options["output_dir"])
+
   for part in parts.values():
     svg_components=[]
     svg_paths=[]
-    if part.ident in completed_parts:
-      if part.checksum==completed_parts[part.ident].csg_checksum:
+    part_key=(part.ident,options["output_dir"])
+    if part_key in completed_parts:
+      if part.checksum==completed_parts[part_key].csg_checksum:
         continue
     fn_part=None
+    if options["short_filenames"]=="1":
+      fb_part=part.ident
+    else:
+      fb_part="%s-part-%s"%(fnBase,part.ident)
     for depth in part.engrave_depths:
       fn=os.path.join(fnTempDir,"part-%s-engrave-%s.svg"%(part.ident,depth))
       setStage("generating %s engrave depth %s"%(part.ident,depth))
@@ -295,21 +328,27 @@ try:
       not part.empty and
       len(part.engrave_depths)<1 and len(part.mark_depths)<1 and not part.cut):
       if part.three_dimensional:
-        fn_part="%s-part-%s.stl"%(fnBase,part.ident)
+        fn_part=os.path.join(options["output_dir"],"%s.stl"%(fb_part))
         setStage("generating %s 3d mesh"%part.ident)
       else:
-        fn_part="%s-part-%s.svg"%(fnBase,part.ident)
+        fn_part=os.path.join(options["output_dir"],"%s.svg"%(fb_part))
         setStage("generating %s 2d figure"%(part.ident))
 
-      try_call(
+      sout,serr,retcode=try_call(
         "openscad %s "
         "-D \"\\$part=\\\"%s\\\"\" "
-        "-o %s --render"
+        "-o %s --render "
         %(
           shlex.quote(fnInputFile),
           part.ident,
-          shlex.quote(fn_part)))
+          shlex.quote(fn_part)), critical=False)
+      if retcode!=0:
+        continue
 
+    def conv_dimension(dim):
+      if dim.endswith("mm"):
+        return float(dim[:-2])
+      return float(dim)
     if len(svg_components)>0:
       setStage("uniting %s layers"%(part.ident))
       path_groups=[]
@@ -321,12 +360,6 @@ try:
           svg=xml["svg"]
         
         if not "path" in svg: continue
-
-        def conv_dimension(dim):
-          if dim.endswith("mm"):
-            return float(dim[:-2])
-          return float(dim)
-
         svg_width=max(svg_width,conv_dimension(svg["@width"]))
         svg_height=max(svg_height,conv_dimension(svg["@height"]))
 
@@ -351,59 +384,95 @@ try:
       svg["@width"]=str(svg_width)
       svg["@height"]=str(svg_height)
       svg["@xmlns:inkscape"]="http://www.inkscape.org/namespaces/inkscape"
-      fn_svg="%s-part-%s.svg"%(fnBase,part.ident)
+      fn_svg=os.path.join(options["output_dir"],"%s.svg"%(fb_part))
       with open(fn_svg,"w") as f:
         f.write(xmltodict.unparse(xml))
       setStage(state=DONE)
       fn_part=fn_svg
-    
-      if "process" in partkv[part.ident]:
-        setStage("processing visicut for %s"%part.ident,RUN)
-        process=partkv[part.ident]["process"]
-        if process=="visicut":
-          fn_mapping=os.path.join(fnTempDir,"mappings.xml")
-          fn_transform=os.path.join(fnTempDir,"transform.xml")
-          fn_plf="%s-part-%s.plf"%(fnBase,part.ident)
-          fn_part=fn_plf
-          shutil.copy(visicut_mapping_file,fn_mapping)
-
-          with open(visicut_transform_file,"r") as f:
-            transform_template=f.read()
-          
-          with open(fn_transform,"w") as f:
-            f.write(transform_template.format(
-              offsetY=svg_height
-            ))
-          
-          zip=zipfile.ZipFile(fn_plf,"w")
-          zip.write(fn_mapping,"mappings.xml")
-          zip.write(fn_transform,"transform.xml")
-          zip.write(fn_svg,os.path.basename(fn_svg))
-          zip.close()
-          if fOpenResult:
-            os.system("visicut %s &"%shlex.quote(fn_plf))
-        setStage(state=DONE)
+    elif not part.three_dimensional and fn_part is not None:
+      with open(fn_part,"r") as f:
+        xml=xmltodict.parse(f.read())
+        svg=xml["svg"]
+      svg_width=conv_dimension(svg["@width"])
+      svg_height=conv_dimension(svg["@height"])
+      fn_svg=fn_part
       
-      if fn_part is not None:
-        completed_parts[part.ident]=completed_part_t(fn_part,file_checksum(fn_part),part.checksum)
+
+    if part.ident in partkv and "process" in partkv[part.ident]:
+      process=partkv[part.ident]["process"]
+      if process=="visicut":
+        if part.three_dimensional and len(svg_components)<1:
+          setStage("no 2d components for visicut process in %s"%part.ident,FAIL)
+          continue
+        setStage("processing visicut for %s"%part.ident,RUN)
+        fn_mapping=os.path.join(fnTempDir,"mappings.xml")
+        fn_transform=os.path.join(fnTempDir,"transform.xml")
+        fn_plf=os.path.join(options["output_dir"],"%s.plf"%(fb_part))
+        fn_part=fn_plf
+        shutil.copy(visicut_mapping_file,fn_mapping)
+
+        with open(visicut_transform_file,"r") as f:
+          transform_template=f.read()
+        
+        with open(fn_transform,"w") as f:
+          f.write(transform_template.format(
+            offsetY=svg_height
+          ))
+        
+        zip=zipfile.ZipFile(fn_plf,"w")
+        zip.write(fn_mapping,"mappings.xml")
+        zip.write(fn_transform,"transform.xml")
+        zip.write(fn_svg,os.path.basename(fn_svg))
+        zip.close()
+        if fOpenResult:
+          os.system("visicut %s &"%shlex.quote(fn_plf))
+      elif process=="finger-faces":
+        if not part.three_dimensional:
+          setStage("no 3d components for finger-faces process in %s"%part.ident,FAIL)
+          continue
+
+        fn_stl=fn_part
+        fn_scad=os.path.join(options["output_dir"],"%s-faces.scad"%fb_part)
+        try_call(
+          "finger-faces %s "
+          "-o %s "
+          %(
+            shlex.quote(fn_stl),
+            shlex.quote(fn_scad)
+            ))
+        print(">>>>>>>>>>>>>>>>>>>")
+        try_call(
+          "bake-openscad %s "
+          %(
+            shlex.quote(fn_scad)
+          )
+        )
+        print("<<<<<<<<<<<<<<<<<<<")
+
+        
+    setStage(state=DONE)
+      
+    if fn_part is not None:
+      completed_parts[part_key]=completed_part_t(fn_part,file_checksum(fn_part),part.checksum)
     
           
 
+
+
+
+finally:
           
   with open(fnLog,"w") as f:
     for k,v in sorted(completed_parts.items()):
-      f.write("part %s %s %s %s\n"
+      f.write("part-in-dir %s %s %s %s %s\n"
         %(
-          shlex.quote(k),
+          shlex.quote(k[0]),
+          shlex.quote(k[1]),
           shlex.quote(v.filename),
           shlex.quote(v.file_checksum),
           shlex.quote(v.csg_checksum)
         ))
 
   
-
-
-
-finally:
   shutil.rmtree(fnTempDir)
   setStage(ident="done",state=DONE,brk=True)
