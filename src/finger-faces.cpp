@@ -8,22 +8,114 @@ struct face_cut_t {
   vertex2_t vertices[4];
 };
 
+void print_help(FILE *f) {
+  fprintf(f,"finger-faces [options] input_file\n");
+  fprintf(f,"Options:\n");
+  fprintf(f,"  -h|--help\n");
+  fprintf(f,"    print this help text and exit normally\n");
+  fprintf(f,"  -p|--prefix <string>\n");
+  fprintf(f,"    prefix to use for generated faces\n");
+  fprintf(f,"  -o|--output <string>\n");
+  fprintf(f,"    set the output file name. defaults to <input>.faces.scad\n");
+  fprintf(f,"  -l|--finger-length <number>\n");
+  fprintf(f,"    set the length of all fingers. default: 12");
+  fprintf(f,"  -c|--finger-clearance <number>\n");
+  fprintf(f,"    set the additional width, compensating for beam width. ");
+  fprintf(f,"  -t|--material-thickness <number>\n");
+  fprintf(f,"    set the material thickness. default: 3.8mm");
+  fprintf(f,"  -w|--finger-lip <number>\n");
+  fprintf(f,"    set the overhang of each finger. default: 0.1mm");
+  fprintf(f,"  -m|--merge-threshold <number>\n");
+  fprintf(f,"    set the max distance for two points to be considered one.");
+}
 
 
 int main(int argn, char **argv) {
 
-  if (argn<2) return 1;
-  MeshFormat fmt1("stl ascii",load_ascii_stl,identify_ascii_stl);
-
+  // todo: make these command-line options
   coord_t finger_length=12;
-  coord_t finger_clearance=-1;
+  coord_t finger_clearance=0.2;
   coord_t material_thickness=3.8;
   coord_t finger_lip=0.1;
   coord_t merge_threshold=1e-5;
+
+  #define ERR(msg) { \
+    print_help(stderr); \
+    fprintf(stderr,"\x1b[31;1mError\x1b[30;0m: " msg); \
+    exit(1); \
+  }
+
+  char *fnIn=NULL;
+  char *fnOut=NULL;
+  const char *sPrefix="face";
+  {
+    enum {
+      IDLE=0,
+      S_PREFIX,
+      S_OUTPUT,
+      S_FINGER_LENGTH,
+      S_FINGER_CLEARANCE,
+      S_MATERIAL_THICKNESS,
+      S_MERGE_THRESHOLD
+    };
+    int s=IDLE;
+    for(int argi=1;argi<argn;argi++) switch(s) {
+      case IDLE:
+        #define SWITCH2(a,b) \
+          } else if ((strcmp(argv[argi],a)==0) || (strcmp(argv[argi],b)==0)) {
+        if (0) {
+        SWITCH2("-h","--help")
+          print_help(stdout);
+          exit(0);
+        SWITCH2("-p","--prefix") s=S_PREFIX;
+        SWITCH2("-o","--output") s=S_OUTPUT;
+        SWITCH2("-l","--finger-length") s=S_FINGER_LENGTH;
+        SWITCH2("-c","--finger-clearance") s=S_FINGER_CLEARANCE;
+        SWITCH2("-t","--material-thickness") s=S_MATERIAL_THICKNESS;
+        SWITCH2("-m","--merge-threshold") s=S_MERGE_THRESHOLD;
+        } else if (fnIn!=NULL) {
+          ERR("input file respecified")
+        } else {
+          fnIn=argv[argi];
+        }
+        break;
+      case S_PREFIX:
+        sPrefix=argv[argi];
+        s=IDLE;
+        break;
+      case S_OUTPUT:
+        fnOut=argv[argi];
+        s=IDLE;
+        break;
+      case S_FINGER_LENGTH:
+        finger_length=strtod(argv[argi],NULL);
+        s=IDLE;
+        break;
+      case S_FINGER_CLEARANCE:
+        finger_clearance=strtod(argv[argi],NULL);
+        s=IDLE;
+        break;
+      case S_MATERIAL_THICKNESS:
+        material_thickness=strtod(argv[argi],NULL);
+        s=IDLE;
+        break;
+      case S_MERGE_THRESHOLD:
+        merge_threshold=strtod(argv[argi],NULL);
+        s=IDLE;
+        break;
+    }
+    if (fnIn==NULL) ERR("no input specified")
+    if (fnOut==NULL) {
+      int n=snprintf(NULL,0,"%s.faces.scad",fnIn);
+      fnOut=(char*)malloc(n+1);
+      snprintf(fnOut,n+1,"%s.faces.scad",fnIn);
+    }
+  }
+
+  MeshFormat fmt1("stl ascii",load_ascii_stl,identify_ascii_stl);
   
-  printf("formats: %lu\n",MeshFormat::formats().size());
-  Mesh *m=MeshFormat::Load(argv[1]);
-  if (m==NULL) return 1;
+  Mesh *m=MeshFormat::Load(fnIn);
+  if (m==NULL) ERR("unable to load input mesh file")
 
   printf("vertices (pre-merge): %lu, ",m->vertices().size());
   m->mergeVertices(merge_threshold);
@@ -33,7 +125,9 @@ int main(int argn, char **argv) {
 
   std::unordered_map<Face*,std::vector<face_cut_t>> cuts;
   std::unordered_map<Face*,std::vector<face_cut_t>> expansions;
-  FILE *fout=fopen("/tmp/cube.scad","w");
+  FILE *fout=fopen(fnOut,"w");
+  if (!fout) perror("fopen");
+
 
   #define MKBASE(face,ex,ey,ez) { \
     ez=(*face)->normal().normal(); \
@@ -190,11 +284,12 @@ int main(int argn, char **argv) {
       MKBASE(face,ex,ey,ez)
       
       fprintf(fout,
-        "part(\"face-%li\",process=\"visicut\","
+        "part(\"%s-%li\",process=\"visicut\","
           "matrix=[[%f,%f,%f,%f], [%f,%f,%f,%f], [%f,%f,%f,%f], [0,0,0,1] ],"
           "extrude=%f) {\n"
         "  cut() {\n"
         "    union() {\n",
+          sPrefix,
           face-faces->begin(),
           ex.x,ey.x,ez.x,o.x,
           ex.y,ey.y,ez.y,o.y,
