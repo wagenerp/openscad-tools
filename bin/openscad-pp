@@ -71,13 +71,18 @@ except clex as e:
 if len(processors)<1:
   processors=all_processors
 
+processors=[ v() for v in processors]
 
 class rtex(Exception): pass
 try:
-  for fn in fnInput:
+  for i_fn,fn in enumerate(fnInput):
     fn_csg="%s.csg"%fn
     fn_pp="%s.pp"%fn
-    for proc in processors:
+    for i_proc,proc in enumerate(processors):
+      print("pass %s/%s: %s on %s..."%(
+        (i_fn*len(processors)+i_proc+1),
+        len(processors)*len(fnInput),
+        proc.ident,fn))
 
       p=sp.Popen(["openscad",fn,"-o",fn_csg,"--enable=assert","--enable=marker"],stdout=sp.PIPE,stderr=sp.PIPE,stdin=sp.PIPE)
       (sout,serr)=p.communicate()
