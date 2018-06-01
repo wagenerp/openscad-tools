@@ -10,7 +10,15 @@ from collections import namedtuple
 import xmltodict
 import zipfile
 import hashlib
-
+sys.path.append(
+  os.path.join(
+    os.path.dirname(os.path.realpath(__file__)),
+    "..",
+    "py"
+  )
+)
+from openscadutil import csg
+from openscadutil.info import InfoProcessor
 repository_root=os.path.join(
   os.path.dirname(os.path.realpath(__file__)),
   "..",)
@@ -168,13 +176,13 @@ def extract_part(ident):
   setStage(state=DONE,brk=True)
   sha=hashlib.sha1()
   with open(fnCSG,"r") as f:
-    for ln in f:
-      ln=ln.strip()
-      sha.update(ln.encode())
-      if expr_csg_3delement.match(ln):
-        three_dimensional=True
-      if expr_csg_2delement.match(ln):
-        two_dimensional=True
+    raw=f.read()
+    sha.update(raw.encode())
+    ast=csg.parse(raw)
+    proc=InfoProcessor()
+    csg.traverse(ast,proc)
+    three_dimensional=proc.three_dimensional
+    two_dimensional=not three_dimensional
   
   if len(engrave_depths)>0:
     sys.stderr.write("engraving:\n")
