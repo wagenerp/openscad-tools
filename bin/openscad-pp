@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import re
 import os
 import subprocess as sp
 sys.path.append(
@@ -12,10 +13,12 @@ sys.path.append(
 from openscadutil import csg
 from openscadutil.constraints import ConstraintProcessor
 from openscadutil.guides import GuidesProcessor
+from openscadutil.storage import StorageProcessor
 
 all_processors=[
   ConstraintProcessor,
-  GuidesProcessor
+  GuidesProcessor,
+  StorageProcessor
 ]
 
 processor_dict={
@@ -84,11 +87,32 @@ try:
         len(processors)*len(fnInput),
         proc.ident,fn))
 
-      p=sp.Popen(["openscad",fn,"-o",fn_csg,"--enable=assert","--enable=marker"],stdout=sp.PIPE,stderr=sp.PIPE,stdin=sp.PIPE)
+      p=sp.Popen([
+        "openscad",
+          fn,
+          "-o",fn_csg,
+          "--enable=assert",
+          "--enable=marker",
+          "-D","$pp_pass=\"%s\""%proc.ident,
+          "--render"
+
+          ],
+        stdout=sp.PIPE,stderr=sp.PIPE,stdin=sp.PIPE)
       (sout,serr)=p.communicate()
       if p.returncode!=0:
         raise rtex("error processing %s: %s"%(fn,serr.decode()))
       
+      if hasattr(proc,"directive"):
+        handler=getattr(proc,"directive")
+        
+        for raw in re.findall(
+            'ECHO: "PPbegin"\nECHO: (.*?)\nECHO: "PPend"\n',
+            serr.decode()
+          ):
+          arg=csg.parse(raw)
+          handler(arg,raw)
+        
+
       with open(fn_csg,"r") as f:
         ast=csg.parse(f.read())
       
