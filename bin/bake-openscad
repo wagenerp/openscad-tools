@@ -26,10 +26,11 @@ options={
   "output_dir": ".",
   "short_filenames": "0"
 }
+filterParts=set()
 
 def print_help(f):
   f.write(
-    "bake-openscad [options] file \n"
+    "bake-openscad [options] file [part*] \n"
     "  compiles a multi-part color-coded openscad file into a vector graphic\n"
     "  format ready for use in 3d / 2d fabrication tools."
     "options:\n"
@@ -62,7 +63,7 @@ try:
           raise clex("input file '%s' does not exist"%arg)
         fnInputFile=arg
       else:
-        raise clex("unknown switch / stray argument: %s"%arg)
+        filterParts.add(arg)
     elif s=="--output-dir":
       options["output_dir"]=arg
       s=None
@@ -261,6 +262,8 @@ try:
     os.makedirs(options["output_dir"])
 
   for part in parts.values():
+    if len(filterParts)>0 and not part.ident in filterParts:
+      continue
     svg_components=[]
     svg_paths=[]
     part_key=(part.ident,options["output_dir"])
