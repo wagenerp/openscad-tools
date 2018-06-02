@@ -16,7 +16,8 @@ module part(
   matrix_actual=($part==undef || $part==$partname) ? matrix : [[1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1]];
   root_actual=root && $part==name;
   explode_actual=($part==undef || $part==$partname) ? $part_explode : 0;
-  if ($part==undef || (!ignore && ($part==name || $part==$partname))) {
+  if ($hidden_parts!=undef && len(search([name],$hidden_parts)[0])==undef) {
+  } else if ($part==undef || (!ignore && ($part==name || $part==$partname))) {
     if ($bake_discover && $partname==undef) echo(str("bake-part:",name,";process:",process,ignore ? ";ignore:true":""));
     multmatrix(matrix_actual)
     translate([0,0,explode_actual])
