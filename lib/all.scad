@@ -8,5 +8,6 @@ include <threads.scad>;
 include <constraints.scad>;
 include <guides.scad>;
 include <util.scad>;
+include <platinum.scad>;
 include <math.scad>;
 include <preprocess.scad>;
