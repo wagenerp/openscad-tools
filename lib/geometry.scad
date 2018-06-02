@@ -75,3 +75,35 @@ module rngon(n,d=undef,r=undef,rc=2) {
 module rncylinder(n,d=undef,r=undef,rc=2,h=1) {
   linear_extrude(height=h) rngon(n,d,r,rc);
 }
+
+module hexgrid(size=[100,100],diam=10,gap=2,hard=false,invert=false,$fn=6) {
+
+  if (hard) {
+    if (invert) {
+      difference() {
+        square(size);
+        hexgrid(size,diam,gap,false,false);
+      }
+    } else {
+      intersection() {
+        square(size);
+        hexgrid(size,diam,gap,false,false);
+      }
+    }
+  } else {
+    if (invert) {
+      difference() {
+        offset(delta=gap) hexgrid(size,diam,gap,false,false);
+        hexgrid(size,diam,gap,false,false);
+      }
+    } else {
+      sy=(diam+gap)*sqrt(3)/2;
+      sx=(diam+gap)*3/4;
+      nx=ceil(size[0]/sx);
+      ny=ceil(size[1]/sy);
+      for(x=[0:1:nx-1]) for(y=[0:1:ny-1])
+        translate([x*sx,(y+(x%2)/2)*sy])
+          circle(d=diam);
+    }
+  }
+}
