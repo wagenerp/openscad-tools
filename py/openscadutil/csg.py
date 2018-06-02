@@ -1,6 +1,6 @@
 import sys
 from collections import namedtuple
-
+import math
 arglist_t=namedtuple("arglist_t","args kwargs")
 modhead_t=namedtuple("modhead_t","ident args kwargs")
 modinst_t=namedtuple("modinst_t","ident args kwargs children")
@@ -23,7 +23,8 @@ tokens = (
   "FENCE",
   "TRUE",
   "FALSE",
-  "UNDEF"
+  "UNDEF",
+  "NAN"
 )
 # Tokens
 
@@ -42,7 +43,8 @@ t_FENCE = r"\#"
 RESERVED = {
   "true": "TRUE",
   "false": "FALSE",
-  "undef": "UNDEF"
+  "undef": "UNDEF",
+  "nan": "NAN"
 }
 
 def t_IDENT(t):
@@ -77,6 +79,11 @@ def t_error(t):
 
 import ply.lex as lex
 lex.lex()
+
+def p_start(p):
+  '''start : literal
+           | statements'''
+  p[0]=p[1]
 
 def p_statements(p):
   '''statements : 
@@ -158,6 +165,9 @@ def p_false(p):
 def p_undef(p):
   '''literal : UNDEF'''
   p[0]=None
+def p_nan(p):
+  '''literal : NAN'''
+  p[0]=math.nan
 
 def p_list(p):
   '''list : LSQUARE literallist RSQUARE
